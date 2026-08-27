@@ -1200,3 +1200,193 @@ export async function removeWhitelistToken(token: string): Promise<{ txHash: str
   );
   return { txHash: `mock-whitelist-remove-tx-${Date.now()}` };
 }
+
+// ── Issue #659: Credential Proof Requirements ────────────────────────────────
+
+export interface Challenge {
+  id: string;
+  challenge: string;
+  createdAt: number;
+  expiresAt: number;
+  used: boolean;
+}
+
+export interface CredentialProofRequest {
+  challenge: string;
+  signature: string;
+  publicKey: string;
+  signatureType: "Ed25519" | "secp256k1";
+}
+
+export interface CredentialProofResponse {
+  isValid: boolean;
+  credentialId?: string;
+  txHash?: string;
+  error?: string;
+}
+
+const CHALLENGE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const MOCK_CHALLENGES = new Map<string, Challenge>();
+const MOCK_ISSUED_CREDENTIALS = new Map<string, { issuedAt: number; recipientPublicKey: string }>();
+
+/**
+ * Generate a new challenge for credential issuance.
+ * Returns a challenge object with unique ID and 5-minute expiry.
+ */
+export function generateChallenge(): Challenge {
+  const id = `challenge-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const challenge = Buffer.from(id).toString("hex");
+  const createdAt = Date.now();
+  const expiresAt = createdAt + CHALLENGE_EXPIRY_MS;
+
+  const challengeObj: Challenge = {
+    id,
+    challenge,
+    createdAt,
+    expiresAt,
+    used: false,
+  };
+
+  MOCK_CHALLENGES.set(id, challengeObj);
+  return challengeObj;
+}
+
+/**
+ * Verify if a challenge is still valid (not expired and not used).
+ */
+export function isChallengeValid(challengeId: string): boolean {
+  const challenge = MOCK_CHALLENGES.get(challengeId);
+  if (!challenge) return false;
+  if (challenge.used) return false;
+  if (Date.now() > challenge.expiresAt) return false;
+  return true;
+}
+
+/**
+ * Verify Ed25519 signature.
+ * In production, this would use a proper cryptographic library.
+ */
+function verifyEd25519Signature(challenge: string, signature: string, publicKey: string): boolean {
+  // Mock implementation: in production, use tweetnacl.js or similar
+  // For now, verify signature length and format
+  if (!signature || signature.length < 64) return false;
+  if (!publicKey || publicKey.length < 32) return false;
+  // Simple validation: signature and public key must be non-empty hex strings
+  try {
+    Buffer.from(signature, "hex");
+    Buffer.from(publicKey, "hex");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verify secp256k1 signature.
+ * In production, this would use a proper cryptographic library.
+ */
+function verifySecp256k1Signature(challenge: string, signature: string, publicKey: string): boolean {
+  // Mock implementation: in production, use elliptic or similar
+  if (!signature || signature.length < 64) return false;
+  if (!publicKey || publicKey.length < 64) return false;
+  // Simple validation: signature and public key must be non-empty hex strings
+  try {
+    Buffer.from(signature, "hex");
+    Buffer.from(publicKey, "hex");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verify signed challenge and issue credential if valid.
+ * Supports Ed25519 and secp256k1 signatures.
+ */
+export async function issueCredentialWithProof(
+  challengeId: string,
+  proofRequest: CredentialProofRequest,
+): Promise<CredentialProofResponse> {
+  // Check if challenge exists and is valid
+  if (!isChallengeValid(challengeId)) {
+    return {
+      isValid: false,
+      error: "Challenge invalid, expired, or already used",
+    };
+  }
+
+  // Verify the signature based on type
+  let signatureValid = false;
+  if (proofRequest.signatureType === "Ed25519") {
+    signatureValid = verifyEd25519Signature(
+      proofRequest.challenge,
+      proofRequest.signature,
+      proofRequest.publicKey,
+    );
+  } else if (proofRequest.signatureType === "secp256k1") {
+    signatureValid = verifySecp256k1Signature(
+      proofRequest.challenge,
+      proofRequest.signature,
+      proofRequest.publicKey,
+    );
+  } else {
+    return {
+      isValid: false,
+      error: "Unsupported signature type",
+    };
+  }
+
+  if (!signatureValid) {
+    return {
+      isValid: false,
+      error: "Invalid signature",
+    };
+  }
+
+  // Mark challenge as used
+  const challenge = MOCK_CHALLENGES.get(challengeId);
+  if (challenge) {
+    challenge.used = true;
+  }
+
+  // Issue credential
+  const credentialId = `credential-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  MOCK_ISSUED_CREDENTIALS.set(credentialId, {
+    issuedAt: Date.now(),
+    recipientPublicKey: proofRequest.publicKey,
+  });
+
+  return {
+    isValid: true,
+    credentialId,
+    txHash: `mock-credential-tx-${Date.now()}`,
+  };
+}
+
+/**
+ * Get credential proof status (for verification purposes).
+ */
+export function getCredentialStatus(credentialId: string): { isValid: boolean; issuedAt?: number } {
+  const credential = MOCK_ISSUED_CREDENTIALS.get(credentialId);
+  if (!credential) {
+    return { isValid: false };
+  }
+  return { isValid: true, issuedAt: credential.issuedAt };
+}
+
+/**
+ * Clean up expired challenges (should be called periodically).
+ */
+export function cleanupExpiredChallenges(): number {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [id, challenge] of MOCK_CHALLENGES.entries()) {
+    if (now > challenge.expiresAt) {
+      MOCK_CHALLENGES.delete(id);
+      cleaned++;
+    }
+  }
+
+  return cleaned;
+}
