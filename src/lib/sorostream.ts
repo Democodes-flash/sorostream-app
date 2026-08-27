@@ -1511,27 +1511,29 @@ export function approveAdminAction(
   const proposal = MOCK_ADMIN_PROPOSALS.get(proposalId);
 
   if (!proposal) {
-    return { success: false, message: "Proposal not found" };
+    return { success: false, message: "Proposal not found", thresholdReached: false };
   }
 
   if (!MOCK_ADMIN_SIGNERS.has(approverAddress)) {
-    return { success: false, message: "Approver is not an authorized admin signer" };
+    return { success: false, message: "Approver is not an authorized admin signer", thresholdReached: false };
   }
 
   if (proposal.status !== "pending") {
-    return { success: false, message: `Proposal status is ${proposal.status}, cannot approve` };
+    return { success: false, message: `Proposal status is ${proposal.status}, cannot approve`, thresholdReached: false };
   }
 
   if (Date.now() > proposal.expiresAt) {
     proposal.status = "expired";
-    return { success: false, message: "Proposal has expired" };
+    return { success: false, message: "Proposal has expired", thresholdReached: false };
   }
 
   if (proposal.approvals.has(approverAddress)) {
-    return { success: false, message: "This admin has already approved this proposal" };
+    return { success: false, message: "This admin has already approved this proposal", thresholdReached: false };
   }
 
   proposal.approvals.add(approverAddress);
+
+  const thresholdReached = proposal.approvals.size >= proposal.requiredThreshold;
 
   // Emit approval event
   const event: ProposalEvent = {
@@ -1543,8 +1545,6 @@ export function approveAdminAction(
     details: `Approval ${proposal.approvals.size}/${proposal.requiredThreshold}`,
   };
   MOCK_PROPOSAL_EVENTS.push(event);
-
-  const thresholdReached = proposal.approvals.size >= proposal.requiredThreshold;
 
   if (thresholdReached) {
     proposal.status = "approved";
