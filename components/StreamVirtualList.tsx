@@ -11,13 +11,17 @@ interface StreamVirtualListProps {
   onToggleSelect?: (id: string) => void;
   /** Invoked when the user clicks the clone action on a stream card. */
   onClone?: (id: string) => void;
+  /** ID of the stream currently focused via keyboard navigation. */
+  focusedStreamId?: string;
+  /** Active optimistic operations keyed by stream ID. */
+  optimisticOps?: Record<string, { type: string; optimisticDeposit?: number; optimisticStatus?: string; optimisticClaimable?: number }>;
 }
 
 /** Estimated row height in px (two-column grid). Grows if items are taller. */
 const BASE_ROW_HEIGHT = 280;
 const OVERSCAN_ROWS = 5;
 
-export default function StreamVirtualList({ streams, selectedIds, onToggleSelect, onClone }: StreamVirtualListProps) {
+export default function StreamVirtualList({ streams, selectedIds, onToggleSelect, onClone, focusedStreamId, optimisticOps }: StreamVirtualListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const savedScrollTop = useRef(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -68,6 +72,20 @@ export default function StreamVirtualList({ streams, selectedIds, onToggleSelect
       container.scrollTop = target;
     }
   }, [streams]);
+
+  // Scroll focused stream card into view when keyboard-navigated.
+  useEffect(() => {
+    if (!focusedStreamId || !containerRef.current) return;
+    const idx = streams.findIndex((s) => s.id === focusedStreamId);
+    if (idx < 0) return;
+    const row = Math.floor(idx / 2);
+    const targetTop = row * BASE_ROW_HEIGHT;
+    const container = containerRef.current;
+    const visibleBottom = container.scrollTop + container.clientHeight;
+    if (targetTop < container.scrollTop || targetTop + BASE_ROW_HEIGHT > visibleBottom) {
+      container.scrollTop = Math.max(0, targetTop - container.clientHeight / 2);
+    }
+  }, [focusedStreamId, streams]);
 
   /** Keyboard navigation inside the virtual list. */
   const handleKeyDown = useCallback(
@@ -146,7 +164,11 @@ export default function StreamVirtualList({ streams, selectedIds, onToggleSelect
             {visibleStreams.map((stream, idx) => (
               <div
                 key={stream.id}
-                className="block"
+                className={`block rounded-xl transition-shadow ${
+                  stream.id === focusedStreamId
+                    ? "ring-2 ring-green-500 ring-offset-2 ring-offset-gray-900"
+                    : ""
+                }`}
                 role="listitem"
               >
                 <div className="relative">
@@ -165,6 +187,10 @@ export default function StreamVirtualList({ streams, selectedIds, onToggleSelect
                       startTime={stream.startTime}
                       endTime={stream.endTime}
                       pausedAt={stream.pausedAt}
+                      optimisticPending={Boolean(optimisticOps?.[stream.id])}
+                      optimisticStatus={optimisticOps?.[stream.id]?.optimisticStatus}
+                      optimisticDeposit={optimisticOps?.[stream.id]?.optimisticDeposit}
+                      optimisticClaimable={optimisticOps?.[stream.id]?.optimisticClaimable}
                     />
                   </Link>
                 </div>

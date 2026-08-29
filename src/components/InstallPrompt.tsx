@@ -1,14 +1,5 @@
 "use client";
-/**
- * InstallPrompt — shows a non-blocking bottom banner after the user has
- * engaged with the app for 2+ minutes and the browser fires
- * beforeinstallprompt.
- *
- * Rules:
- *  - Never shown if the app is already running as a standalone PWA.
- *  - Dismissed state is persisted in sessionStorage (re-appears next session).
- *  - The 2-minute timer starts when this component mounts (i.e. page load).
- */
+
 import { useEffect, useState } from "react";
 import {
   MIN_ENGAGEMENT_MS,
@@ -17,6 +8,8 @@ import {
 } from "@/src/lib/pwa";
 
 const DISMISSED_KEY = "sorostream-pwa-dismissed";
+const VISIT_COUNT_KEY = "sorostream_visit_count";
+const SESSION_COUNTED_KEY = "sorostream_session_counted";
 
 export default function InstallPrompt() {
   const [canInstall, setCanInstall] = useState(false);
@@ -30,6 +23,18 @@ export default function InstallPrompt() {
     (window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true);
 
+  // Track visit count (increments once per session)
+  useEffect(() => {
+    if (typeof window === "undefined" || isStandalone) return;
+
+    if (!sessionStorage.getItem(SESSION_COUNTED_KEY)) {
+      sessionStorage.setItem(SESSION_COUNTED_KEY, "1");
+      const current = parseInt(localStorage.getItem(VISIT_COUNT_KEY) || "0", 10);
+      const updated = current + 1;
+      localStorage.setItem(VISIT_COUNT_KEY, String(updated));
+    }
+  }, [isStandalone]);
+
   // Listen for beforeinstallprompt availability.
   useEffect(() => {
     if (isStandalone) return;
@@ -37,23 +42,27 @@ export default function InstallPrompt() {
     return off;
   }, [isStandalone]);
 
-  // Start the 2-minute engagement timer.
+  // Start the engagement timer (fallback for long 1st visit)
   useEffect(() => {
     if (isStandalone) return;
     const timer = setTimeout(() => setEngagementMet(true), MIN_ENGAGEMENT_MS);
     return () => clearTimeout(timer);
   }, [isStandalone]);
 
-  // Show the banner once both conditions are met and not previously dismissed.
+  // Show the banner if second visit on mobile browsers OR canInstall + engagement met
   useEffect(() => {
-    if (
-      canInstall &&
-      engagementMet &&
-      !sessionStorage.getItem(DISMISSED_KEY)
-    ) {
+    if (typeof window === "undefined" || isStandalone) return;
+    if (sessionStorage.getItem(DISMISSED_KEY)) return;
+
+    const visits = parseInt(localStorage.getItem(VISIT_COUNT_KEY) || "0", 10);
+    const isMobile =
+      typeof navigator !== "undefined" &&
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+    if (visits >= 2 || (canInstall && engagementMet) || (isMobile && visits >= 2)) {
       setVisible(true);
     }
-  }, [canInstall, engagementMet]);
+  }, [canInstall, engagementMet, isStandalone]);
 
   function handleDismiss() {
     setVisible(false);
@@ -77,6 +86,7 @@ export default function InstallPrompt() {
       aria-label="Install SoroStream app"
       aria-modal="false"
       className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-sm animate-slide-up"
+      data-testid="pwa-install-prompt"
     >
       <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl px-5 py-4 flex items-start gap-4">
         {/* Brand icon */}

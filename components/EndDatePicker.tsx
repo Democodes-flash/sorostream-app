@@ -31,10 +31,23 @@ function formatRelative(seconds: number): string {
 }
 
 /**
+ * Returns a datetime-local string (YYYY-MM-DDTHH:MM) for the current moment,
+ * used as the `min` attribute to prevent selecting past dates in the browser UI.
+ */
+function nowAsDatetimeLocal(): string {
+  const now = new Date();
+  // Offset by the local timezone so datetime-local reflects wall-clock "now"
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+}
+
+/**
  * Timezone-aware end-date/time picker (#427) — an alternative to entering a
  * raw duration. The user picks an instant in any IANA timezone; the absolute
  * UTC time is reported via `onChange` and the equivalent duration from now
  * via `onDurationResolved`.
+ *
+ * Validates that the selected instant is strictly in the future (#487).
  */
 export default function EndDatePicker({
   value = "",
@@ -45,6 +58,7 @@ export default function EndDatePicker({
 }: EndDatePickerProps) {
   const [timezone, setTimezone] = useState<string>("");
   const [wallTime, setWallTime] = useState<string>("");
+  const [internalError, setInternalError] = useState<string>("");
 
   const timezoneOptions = useMemo(() => listTimezones(), []);
 
@@ -63,20 +77,36 @@ export default function EndDatePicker({
   function resolve(wall: string, tz: string) {
     setWallTime(wall);
     if (!wall) {
+      setInternalError("");
       onChange("");
       onDurationResolved?.(0);
       return;
     }
     const utc = zonedWallTimeToUtc(wall, tz || getUserTimezone());
     if (!utc) return;
+
+    // Validate: the chosen instant must be strictly in the future.
+    if (utc.getTime() <= Date.now()) {
+      setInternalError("End date must be in the future.");
+      onChange("");
+      onDurationResolved?.(0);
+      return;
+    }
+
+    setInternalError("");
     onChange(utc.toISOString());
     onDurationResolved?.(Math.max(0, Math.round((utc.getTime() - Date.now()) / 1000)));
   }
 
   const previewUtc = wallTime ? zonedWallTimeToUtc(wallTime, timezone || getUserTimezone()) : null;
-  const durationSeconds = previewUtc
-    ? Math.max(0, Math.round((previewUtc.getTime() - Date.now()) / 1000))
-    : null;
+  const durationSeconds =
+    previewUtc && previewUtc.getTime() > Date.now()
+      ? Math.round((previewUtc.getTime() - Date.now()) / 1000)
+      : null;
+
+  // Prefer the externally supplied error over the internal one so the parent
+  // can override with its own validation message.
+  const displayError = error || internalError;
 
   return (
     <div>
@@ -89,11 +119,12 @@ export default function EndDatePicker({
           id={id}
           type="datetime-local"
           value={wallTime}
+          min={nowAsDatetimeLocal()}
           onChange={(e) => resolve(e.target.value, timezone)}
           className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-          aria-invalid={!!error}
+          aria-invalid={!!displayError}
           aria-describedby={
-            error ? `${id}-error` : previewUtc ? `${id}-preview` : undefined
+            displayError ? `${id}-error` : previewUtc ? `${id}-preview` : undefined
           }
         />
         <select
@@ -118,7 +149,7 @@ export default function EndDatePicker({
         </select>
       </div>
 
-      {previewUtc && (
+      {previewUtc && durationSeconds !== null && (
         <p id={`${id}-preview`} className="text-xs text-slate-400 mt-1" aria-live="polite">
           {formatDateWithTimezone(previewUtc)} · UTC{" "}
           {previewUtc.toISOString().slice(0, 16).replace("T", " ")}
@@ -131,14 +162,14 @@ export default function EndDatePicker({
         </p>
       )}
 
-      {error && (
+      {displayError && (
         <p
           id={`${id}-error`}
           role="alert"
           aria-live="polite"
           className="text-red-400 text-sm mt-1"
         >
-          {error}
+          {displayError}
         </p>
       )}
     </div>

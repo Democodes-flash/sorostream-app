@@ -22,7 +22,7 @@ import { SkeletonForm } from "@/components/Skeleton";
 import { useTranslations } from "@/src/lib/i18n";
 import { trackEvent } from "@/src/lib/analytics";
 import { verifyAddress, canCreateStream, type AddressVerification } from "@/src/lib/addressVerification";
-import { sorostream, getFeeConfig, calcWithdrawBreakdown, validateMetadataUri, getCollateralConfig, checkIsNewSender, calcCollateral, getGasFeeEstimate, type GasFeeEstimate } from "@/src/lib/sorostream";
+import { sorostream, getFeeConfig, calcWithdrawBreakdown, validateMetadataUri, getCollateralConfig, checkIsNewSender, calcCollateral, getGasFeeEstimate, getStreamCapConfig, type GasFeeEstimate } from "@/src/lib/sorostream";
 import { getContacts, saveContact, isRecipientApproved, isWhitelistEnforced, type AddressBookContact } from "@/src/lib/addressBook";
 import { useWallet } from "@/src/context/WalletContext";
 import { getOptionalEnvVar } from "@/src/lib/env";
@@ -499,6 +499,11 @@ function NewStreamWizard() {
   const [collateralBps, setCollateralBps] = useState<number | null>(null);
   const [isNewSender, setIsNewSender] = useState(false);
 
+  // Deposit cap validation (#526)
+  const [depositCapStroops, setDepositCapStroops] = useState<number | null>(null);
+  const [capLoading, setCapLoading] = useState(false);
+  const [capError, setCapError] = useState("");
+
   // Fetch collateral config and new-sender status once when reaching review step
   useEffect(() => {
     if (step !== "review") return;
@@ -516,6 +521,28 @@ function NewStreamWizard() {
     void fetchCollateral();
     return () => { cancelled = true; };
   }, [step, address]);
+
+  // Fetch contract deposit cap once when the user reaches the amount step (#526).
+  // The cap is validated again in goNext() before allowing the user to advance.
+  useEffect(() => {
+    if (step !== "amount") return;
+    let cancelled = false;
+    setCapLoading(true);
+    setCapError("");
+    getStreamCapConfig()
+      .then(({ maxDepositStroops }) => {
+        if (!cancelled) setDepositCapStroops(maxDepositStroops);
+      })
+      .catch(() => {
+        // If the cap cannot be fetched, allow the user to proceed but clear
+        // any stale error so they aren't permanently blocked.
+        if (!cancelled) setDepositCapStroops(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCapLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [step]);
 
   function handleTemplateSelect(seconds: number, suggestedAmount?: string, recipientOverride?: string, tokenOverride?: string, cliffDateOverride?: string) {
     setDuration(seconds);
@@ -577,6 +604,20 @@ function NewStreamWizard() {
         setErrors({ ...errors, amount: aErr, duration: dErr, endDate: eErr, cliffDate: cErr, scheduledStart: sErr });
         return;
       }
+      // Validate against the contract's maximum deposit cap (#526).
+      // Convert the user-entered amount to stroops (1 unit = 10_000_000 stroops)
+      // and compare against the fetched cap. Only block when the cap is known.
+      if (depositCapStroops !== null && depositCapStroops > 0) {
+        const amountStroops = Math.round(parseFloat(amount) * 10_000_000);
+        if (amountStroops > depositCapStroops) {
+          const capFormatted = (depositCapStroops / 10_000_000).toLocaleString();
+          const capErr = `Amount exceeds the contract's maximum deposit cap of ${capFormatted} ${selectedToken}. Please enter a lower amount.`;
+          setCapError(capErr);
+          setErrors((prev) => ({ ...prev, amount: capErr }));
+          return;
+        }
+      }
+      setCapError("");
       setStep("preview");
     }
   }
@@ -700,6 +741,7 @@ function NewStreamWizard() {
       setAutoRenewDuration(0);
       setShowAdvanced(false);
       setMetadataUri("");
+      setMemo("");
       setMetadataUriError("");
       setGasFee(null);
       setFeeBumpEnabled(false);
@@ -708,6 +750,8 @@ function NewStreamWizard() {
       setScheduledStart("");
       setTouched({ recipient: false, amount: false });
       setDurationPickerKey((k) => k + 1);
+      setConfirmAmountInput("");
+      setStep("recipient");
       setTxStage(null);
 
       // Trigger stream list refresh so the new stream appears on the dashboard
@@ -954,9 +998,19 @@ function NewStreamWizard() {
             </div>
 
             <div>
-              <label htmlFor="amount" className="text-gray-200 text-sm font-medium block mb-2">
-                {t("amount_label")}
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="amount" className="text-gray-200 text-sm font-medium">
+                  {t("amount_label")}
+                </label>
+                {depositCapStroops !== null && depositCapStroops > 0 && (
+                  <span className="text-gray-400 text-xs">
+                    Max: {(depositCapStroops / 10_000_000).toLocaleString()} {selectedToken === CUSTOM_TOKEN_VALUE ? "tokens" : selectedToken}
+                  </span>
+                )}
+                {capLoading && (
+                  <span className="text-gray-500 text-xs">Checking limit…</span>
+                )}
+              </div>
               <input
                 id="amount"
                 type="text"

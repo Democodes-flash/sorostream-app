@@ -37,3 +37,31 @@ if (typeof global.ResizeObserver === 'undefined') {
   // eslint-disable-next-line
   (global as any).ResizeObserver = ResizeObserver;
 }
+
+/**
+ * IntersectionObserver is not implemented in jsdom. Provide a no-op mock so
+ * components that use it (e.g. infinite-scroll sentinel) can be unit tested
+ * without errors. The observer never fires intersection callbacks in tests —
+ * tests that need to exercise the scroll trigger should call the callback
+ * directly via the mock or simulate it with userEvent.
+ */
+if (typeof global.IntersectionObserver === 'undefined') {
+  class IntersectionObserver {
+    callback: IntersectionObserverCallback;
+    readonly root: Element | null = null;
+    readonly rootMargin: string = '0px';
+    readonly thresholds: ReadonlyArray<number> = [];
+
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback;
+    }
+
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] { return []; }
+  }
+
+  // eslint-disable-next-line
+  (global as any).IntersectionObserver = IntersectionObserver;
+}

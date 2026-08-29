@@ -22,6 +22,7 @@ import StreamHealthBadge, {
   calculateHealthScore,
   getHealthTier,
 } from "@/components/StreamHealthBadge";
+import StreamHealthCard from "@/components/StreamHealthCard";
 import CollateralUnlockBadge from "@/components/CollateralUnlockBadge";
 import { type StreamHistoryEntry } from "@/src/lib/export";
 import {
@@ -56,6 +57,7 @@ import {
 } from "@/src/lib/share";
 import StreamShareButtons from "@/components/StreamShareButtons";
 import StreamCloneModal from "@/components/StreamCloneModal";
+import StreamAnalyticsCharts from "@/components/StreamAnalyticsCharts";
 
 /** Grace period in seconds before a cancel is submitted on-chain. */
 const CANCEL_GRACE_SECONDS = 5;
@@ -204,6 +206,9 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
 
   // ── Clone modal ────────────────────────────────────────────────────────────
   const [showCloneModal, setShowCloneModal] = useState(false);
+
+  // ── Save Template modal ────────────────────────────────────────────────────
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
 
   // ── Success banner (stream just created) ──────────────────────────────────
   const [successPhase, setSuccessPhase] = useState<"in" | "out" | null>(null);
@@ -373,6 +378,19 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
     const interval = setInterval(checkMilestones, 1000);
     return () => clearInterval(interval);
   }, [stream, addToast, pushNotificationsEnabled]);
+
+  // ── Clear stream data on wallet disconnect (#525) ─────────────────────────
+  // When the wallet disconnects (address becomes null), immediately flush the
+  // stream state so stale data from the previous session is never shown to a
+  // different user who subsequently connects.
+  useEffect(() => {
+    if (address === null) {
+      setStream(null);
+      setHistoryEntries([]);
+      setError(null);
+      setAllStreams([]);
+    }
+  }, [address]);
 
   // ── Load stream on mount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -925,6 +943,11 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
   const depositXlm = stream.deposit / 10_000_000;
   const flowXlm = stream.flowRate / 10_000_000;
 
+  // Determine if we should display USD equivalents and which type
+  const isUsdcToken = stream.token === "USDC";
+  const depositAmount = stream.deposit / 10_000_000;
+  const flowAmount = stream.flowRate / 10_000_000;
+
   // ── Render: detail ─────────────────────────────────────────────────────────
   return (
     <main id="main-content" tabIndex={-1} className="min-h-screen bg-gray-900 text-white p-4 sm:p-8">
@@ -997,31 +1020,12 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
           </p>
         )}
 
-        {/* Stream Health Score */}
-        {displayStatus === "Active" && (() => {
-          const now = Date.now();
-          const totalDuration = new Date(stream.endTime).getTime() - new Date(stream.startTime).getTime();
-          const elapsed = now - new Date(stream.startTime).getTime();
-          const timeRemainingRatio = totalDuration > 0 ? Math.max(0, Math.min(1, 1 - elapsed / totalDuration)) : 0;
-          const estimatedStreamed = stream.flowRate * Math.max(0, elapsed / 1000);
-          const depositRemainingRatio = stream.deposit > 0 ? Math.max(0, Math.min(1, 1 - estimatedStreamed / stream.deposit)) : 0;
-          const topUpCount = historyEntries.filter((e) => e.type === "top-up").length;
-          const score = calculateHealthScore({ depositRemainingRatio, timeRemainingRatio, topUpCount });
-          const tier = getHealthTier(score);
-          return (
-            <div className="mt-2">
-              <StreamHealthBadge
-                score={score}
-                tier={tier}
-                depositRemainingRatio={depositRemainingRatio}
-                timeRemainingRatio={timeRemainingRatio}
-                topUpCount={topUpCount}
-              />
-            </div>
-          );
-        })()}
+        {/* Stream Health Card */}
+        <div className="mb-4">
+          <StreamHealthCard stream={stream} historyEntries={historyEntries} />
+        </div>
 
-        <div className="flex justify-end gap-2 mb-4 print-hidden">
+        <div className="flex flex-wrap justify-end gap-2 mb-4 print-hidden">
           {/* Bookmark toggle */}
           <button
             onClick={() => toggleBookmark(stream.id)}
@@ -1078,6 +1082,20 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
             </svg>
             Clone
           </button>
+          
+          <button
+            onClick={() => setShowSaveTemplateModal(true)}
+            aria-label="Save as template"
+            className="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+            Save as Template
+          </button>
+          
           <div className="relative inline-block" ref={shareMenuRef}>
             <button
               onClick={() => setShowShareMenu((v) => !v)}
@@ -1232,14 +1250,18 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
               <p className="text-gray-400 mb-1">Total deposit</p>
               <p className="text-white font-mono">
                 {toXlm(stream.deposit)} {stream.token}
-                <FiatDisplay xlmAmount={depositXlm} />
+                <FiatDisplay
+                  {...(isUsdcToken ? { usdcAmount: depositAmount } : { xlmAmount: depositXlm })}
+                />
               </p>
             </div>
             <div>
               <p className="text-gray-400 mb-1">Flow rate</p>
               <p className="text-green-400 font-mono">
                 {toXlm(stream.flowRate)} {stream.token}/sec
-                <FiatDisplay xlmAmount={flowXlm} />
+                <FiatDisplay
+                  {...(isUsdcToken ? { usdcAmount: flowAmount } : { xlmAmount: flowXlm })}
+                />
               </p>
             </div>
             {stream.autoRenew && (
@@ -1601,7 +1623,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
 
                 return (
                   <>
-                    <StreamHistory entries={realEntries} />
+                    <StreamHistory entries={realEntries} streamId={params.id} />
                     {realEntries.length > 0 && (
                       <div className="mt-4">
                         <p className="text-gray-400 text-sm font-medium mb-3">
@@ -1617,6 +1639,19 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
                   </>
                 );
               })()}
+            </section>
+          </StreamErrorBoundary>
+
+          {/* Analytics section (#358) */}
+          <StreamErrorBoundary section="Stream Analytics" resetKey={stream.id}>
+            <section aria-labelledby="analytics-heading">
+              <h2 id="analytics-heading" className="text-lg font-semibold mb-3">
+                Analytics
+              </h2>
+              <StreamAnalyticsCharts
+                stream={stream}
+                historyEntries={historyEntries}
+              />
             </section>
           </StreamErrorBoundary>
         </div>
@@ -1886,6 +1921,17 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
         <StreamCloneModal
           stream={stream}
           onClose={() => setShowCloneModal(false)}
+        />
+      )}
+
+      {stream && (
+        <SaveTemplateModal
+          open={showSaveTemplateModal}
+          onClose={() => setShowSaveTemplateModal(false)}
+          durationSeconds={stream.endTime - stream.startTime}
+          amount={formatStellarAmount(stream.deposit)}
+          recipient={stream.recipient}
+          token={stream.token}
         />
       )}
     </main>

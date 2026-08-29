@@ -298,7 +298,8 @@ export default function StreamActions({
 
         <button
           onClick={cancelPending ? handleUndo : () => setShowCancelConfirm(true)}
-          disabled={cancelling || withdrawing}
+          disabled={cancelling || cancelPending || withdrawing}
+          aria-busy={cancelling}
           aria-live="polite"
           className={`flex-1 py-3 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed ${
             cancelPending

@@ -8,20 +8,26 @@ const STATUSES = [
   {
     name: "Active",
     symbol: "●",
-    colorClass: "bg-green-900 text-green-400",
+    colorClass: "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400",
     description: "Stream is live and funds are flowing to the recipient.",
   },
   {
-    name: "Ended",
-    symbol: "■",
-    colorClass: "bg-gray-700 text-gray-400",
-    description: "Stream reached its end date and is no longer active.",
+    name: "Paused",
+    symbol: "⏸",
+    colorClass: "bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400",
+    description: "Stream is temporarily paused. Remaining balance is frozen.",
+  },
+  {
+    name: "Completed",
+    symbol: "✓",
+    colorClass: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-400",
+    description: "Stream completed successfully and all funds were distributed.",
   },
   {
     name: "Cancelled",
     symbol: "✕",
-    colorClass: "bg-gray-700 text-gray-400",
-    description: "Stream was cancelled before completing.",
+    colorClass: "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400",
+    description: "Stream was cancelled before completing. Remaining balance returned to sender.",
   },
 ];
 

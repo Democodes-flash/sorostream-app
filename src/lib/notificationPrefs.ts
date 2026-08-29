@@ -5,6 +5,10 @@ export interface NotificationEventPrefs {
   expiringSoon: boolean;
   /** Notify when claimable funds become available to withdraw. */
   withdrawalAvailable: boolean;
+  /** Notify when a new incoming stream is received (#523). */
+  streamReceived: boolean;
+  /** Notify when a sender cancels a stream you are receiving (#523). */
+  streamCancelled: boolean;
 }
 
 export interface NotificationPrefs {
@@ -31,6 +35,8 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
     streamCompleted: true,
     expiringSoon: true,
     withdrawalAvailable: true,
+    streamReceived: true,
+    streamCancelled: true,
   },
   webhookEnabled: false,
   webhookUrl: "",

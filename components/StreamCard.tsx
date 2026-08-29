@@ -52,6 +52,16 @@ interface StreamCardProps {
   endTime?: string;
   /** ISO timestamp captured when the stream was paused (freezes remaining balance). */
   pausedAt?: string;
+  /** Token type (XLM, USDC, etc.) for proper USD conversion display. */
+  token?: string;
+  /** True when an on-chain transaction is in-flight for this stream. */
+  optimisticPending?: boolean;
+  /** Optimistic status override while transaction is pending. */
+  optimisticStatus?: string;
+  /** Optimistic deposit override while transaction is pending. */
+  optimisticDeposit?: number;
+  /** Optimistic claimable override while transaction is pending. */
+  optimisticClaimable?: number;
 }
 
 export default function StreamCard({
@@ -69,6 +79,11 @@ export default function StreamCard({
   startTime,
   endTime,
   pausedAt,
+  token = "XLM",
+  optimisticPending = false,
+  optimisticStatus,
+  optimisticDeposit,
+  optimisticClaimable,
 }: StreamCardProps) {
   const { isBookmarked, toggleBookmark } = useBookmarks();
   const bookmarked = isBookmarked(id);
@@ -81,15 +96,31 @@ export default function StreamCard({
         aria-label={id ? `Loading stream ${id}` : "Loading stream"}
         aria-busy="true"
       >
-        <div className="flex justify-between">
-          <div className="h-4 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-          <div className="h-5 w-16 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+        {/* Header: Stream ID and status badges */}
+        <div className="flex justify-between items-center">
+          <span className="flex items-center gap-2">
+            <div className="h-4 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          </span>
+          <div className="flex items-center gap-2">
+            <div className="h-5 w-16 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-5 w-16 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-5 w-16 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+          </div>
         </div>
-        <div className="space-y-2">
-          <div className="h-3 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-          <div className="h-3 w-36 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-          <div className="h-3 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-          <div className="h-3 w-28 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+
+        {/* From/To information */}
+        <div className="text-sm space-y-2">
+          <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-4 w-44 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-4 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-4 w-36 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-4 w-52 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+        </div>
+
+        {/* Tags section */}
+        <div className="flex gap-2">
+          <div className="h-6 w-16 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+          <div className="h-6 w-20 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
         </div>
       </div>
     );
@@ -142,10 +173,16 @@ function statusBadgeClass(status: string): string {
   }
 }
 
-  /** Convert stroops → XLM (display value). */
+  const effectiveStatus = optimisticStatus ?? status;
+  const effectiveDeposit = optimisticDeposit ?? deposit;
+
+  /** Convert stroops → XLM/USDC (display value). */
   const toXlm = (val: number) => (val / 10_000_000).toFixed(2);
   const flowXlm = flowRate / 10_000_000;
-  const depositXlm = deposit / 10_000_000;
+  const depositXlm = effectiveDeposit / 10_000_000;
+
+  /** Determine if we should display USD equivalents and which type */
+  const isUsdcToken = token === "USDC";
 
   // ── Estimated completion time (#415) ──────────────────────────────────
   // For active streams with a fixed total amount, estimate when the
@@ -213,11 +250,22 @@ function statusBadgeClass(status: string): string {
               Scheduled
             </span>
           )}
+          {optimisticPending && (
+            <span
+              data-testid="optimistic-confirming"
+              className="text-xs px-2 py-0.5 rounded-full bg-amber-900/60 text-amber-300 border border-amber-700 flex items-center gap-1 font-medium"
+              aria-label="Transaction confirming"
+              title="Transaction submitted and confirming on-chain"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
+              Confirming…
+            </span>
+          )}
           <span
-            className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(status)}`}
-            aria-label={`Status: ${status}`}
+            className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(effectiveStatus)}`}
+            aria-label={`Status: ${effectiveStatus}`}
           >
-            {status}
+            {effectiveStatus}
           </span>
           {healthScore !== null && healthTier !== null && (() => {
             const now = Date.now();
@@ -261,16 +309,20 @@ function statusBadgeClass(status: string): string {
         <p className="text-gray-600 dark:text-gray-400">
           Flow:{" "}
           <span className="text-green-600 dark:text-green-400">
-            {toXlm(flowRate)} XLM/sec
-            <FiatDisplay xlmAmount={flowXlm} />
+            {toXlm(flowRate)} {token}/sec
+            <FiatDisplay
+              {...(isUsdcToken ? { usdcAmount: flowXlm } : { xlmAmount: flowXlm })}
+            />
           </span>
         </p>
 
         <p className="text-gray-600 dark:text-gray-400">
           Total:{" "}
           <span className="text-gray-900 dark:text-white">
-            {toXlm(deposit)} XLM
-            <FiatDisplay xlmAmount={depositXlm} />
+            {toXlm(deposit)} {token}
+            <FiatDisplay
+              {...(isUsdcToken ? { usdcAmount: depositXlm } : { xlmAmount: depositXlm })}
+            />
           </span>
         </p>
 

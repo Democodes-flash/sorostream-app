@@ -15,7 +15,6 @@ export default function StreamProgressBar({ stream }: StreamProgressBarProps) {
     const now = Date.now();
 
     const totalDuration = end - start;
-    const elapsed = now - start;
 
     if (totalDuration <= 0) {
       return { percentage: 0, isCompleted: false, elapsedText: "0%" };
@@ -34,6 +33,12 @@ export default function StreamProgressBar({ stream }: StreamProgressBarProps) {
         elapsedText: `${Math.round(percentage)}%`,
       };
     }
+
+    // Clamp the effective current time to [start, end] so that:
+    //  - future streams (now < start) always show 0%
+    //  - completed streams (now > end) always show 100%
+    const effectiveNow = Math.min(Math.max(now, start), end);
+    const elapsed = effectiveNow - start;
 
     const rawPercentage = Math.max(0, Math.min(100, (elapsed / totalDuration) * 100));
     const isCompleted = stream.status === "Ended" || now >= end;

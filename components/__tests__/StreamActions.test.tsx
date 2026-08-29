@@ -151,8 +151,12 @@ describe('StreamActions — cancel grace period', () => {
     renderActions();
     startCancelGracePeriod();
 
-    // Click the button-level undo
-    fireEvent.click(screen.getByRole('button', { name: /undo cancel/i }));
+    // The button is now disabled (#485 fix); undo is done via the toast action.
+    const { onClick: undoAction } = (mockUpsertPersistentToast.mock.calls[0] as any)[3] as {
+      label: string;
+      onClick: () => void;
+    };
+    act(() => { undoAction(); });
 
     // Advance past the 5-second mark
     await act(async () => { vi.advanceTimersByTime(6000); });
@@ -167,15 +171,27 @@ describe('StreamActions — cancel grace period', () => {
 
     renderActions();
     startCancelGracePeriod();
-    fireEvent.click(screen.getByRole('button', { name: /undo cancel/i }));
+
+    // The button is disabled (#485 fix); invoke the toast action directly.
+    const { onClick: undoAction } = (mockUpsertPersistentToast.mock.calls[0] as any)[3] as {
+      label: string;
+      onClick: () => void;
+    };
+    act(() => { undoAction(); });
 
     expect(mockRemoveToast).toHaveBeenCalledWith(1);
   });
 
-  it('restores the Cancel button after Undo', () => {
+  it('restores the Cancel button after Undo via toast action', () => {
     renderActions();
     startCancelGracePeriod();
-    fireEvent.click(screen.getByRole('button', { name: /undo cancel/i }));
+
+    // The "Undo Cancel" button is disabled (#485 fix); undo via the toast action.
+    const { onClick: undoAction } = (mockUpsertPersistentToast.mock.calls[0] as any)[3] as {
+      label: string;
+      onClick: () => void;
+    };
+    act(() => { undoAction(); });
 
     expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument();
   });
@@ -223,6 +239,50 @@ describe('StreamActions — cancel grace period', () => {
 
     expect(sorostream.cancelStream).not.toHaveBeenCalled();
     expect(mockAddToast).toHaveBeenCalledWith('Cancellation undone.', 'info');
+  });
+});
+
+describe('StreamActions — cancel button disabled during grace period (#485)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    (sorostream.cancelStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+      txHash: 'mock-tx-hash',
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('cancel button is disabled as soon as the grace period starts', () => {
+    renderActions();
+    startCancelGracePeriod();
+
+    // During the grace period the button shows "Undo Cancel" and must be disabled
+    // so the user cannot accidentally submit a second cancellation.
+    const undoBtn = screen.getByRole('button', { name: /undo cancel/i });
+    expect(undoBtn).toBeDisabled();
+  });
+
+  it('cancel button is disabled while the on-chain transaction is in flight', async () => {
+    let resolveCancelStream!: (value: { txHash: string }) => void;
+    (sorostream.cancelStream as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise<{ txHash: string }>((res) => { resolveCancelStream = res; }),
+    );
+
+    renderActions();
+    startCancelGracePeriod();
+
+    // Advance past the grace period to trigger the on-chain call
+    await act(async () => { vi.advanceTimersByTime(5000); });
+
+    // The button should still be disabled while cancelling is true
+    const cancelBtn = screen.getByRole('button', { name: /cancelling/i });
+    expect(cancelBtn).toBeDisabled();
+
+    // Clean up — resolve the promise
+    await act(async () => { resolveCancelStream({ txHash: 'tx-123' }); });
   });
 });
 

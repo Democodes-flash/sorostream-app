@@ -22,6 +22,13 @@ const makeEntry = (overrides: Partial<HistoryEntry>): HistoryEntry => ({
   ...overrides,
 });
 
+/** Generate N unique entries to exceed the initial page size (20). */
+function makeManyEntries(count: number): HistoryEntry[] {
+  return Array.from({ length: count }, (_, i) =>
+    makeEntry({ txHash: `TX_HASH_${String(i).padStart(4, '0')}` }),
+  );
+}
+
 describe('StreamHistory', () => {
   it('renders a creation entry', () => {
     render(<StreamHistory entries={[makeEntry({ type: 'creation' })]} />);
@@ -100,5 +107,32 @@ describe('StreamHistory', () => {
   it('renders loading skeleton when loading prop is true', () => {
     const { container } = render(<StreamHistory entries={[]} loading />);
     expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+  });
+
+  // ── Infinite scroll (issue #457) ────────────────────────────────────────
+
+  it('does NOT render a "Load more" button when entries exceed one page', () => {
+    render(<StreamHistory entries={makeManyEntries(25)} />);
+    expect(screen.queryByRole('button', { name: /load more/i })).toBeNull();
+  });
+
+  it('renders the scroll sentinel element when more entries remain', () => {
+    const { container } = render(<StreamHistory entries={makeManyEntries(25)} />);
+    // The sentinel has aria-label for accessibility
+    const sentinel = container.querySelector('[aria-label="Loading more history events"]');
+    expect(sentinel).toBeTruthy();
+  });
+
+  it('shows only the first page of entries on initial render', () => {
+    const entries = makeManyEntries(25);
+    render(<StreamHistory entries={entries} />);
+    // Only 20 entries rendered initially; no sentinel needed for ≤20 entries
+    const items = screen.getAllByText('Created');
+    expect(items.length).toBe(20);
+  });
+
+  it('shows end-of-list message when all entries are visible', () => {
+    render(<StreamHistory entries={makeManyEntries(5)} />);
+    expect(screen.getByText(/reached the end/i)).toBeInTheDocument();
   });
 });

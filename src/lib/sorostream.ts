@@ -766,10 +766,52 @@ export function claimableNow(stream: any): string {
 
 
 /**
+ * Total amount streamed so far from a stream's deposit, in stroops.
+ *
+ * - For active streams: `flowRate × elapsed_seconds_from_start`.
+ * - For paused streams: frozen at the value held when pausing.
+ * - For future streams (startTime > now): 0 — no drip has occurred yet.
+ * - For ended/cancelled streams: capped at the moment the stream stopped.
+ *
+ * The return value is always a non-negative integer (floor, in stroops).
+ */
+export function getStreamedAmount(stream: any): number {
+  if (!stream) return 0;
+
+  const flowRate = Number(stream.flowRate);
+  const startTime = new Date(stream.startTime).getTime();
+
+  if (!Number.isFinite(flowRate) || !Number.isFinite(startTime)) return 0;
+
+  // Clamp effective "now" to the stream start time so future streams show 0%.
+  let effectiveNow = Math.max(Date.now(), startTime);
+
+  // Paused: freeze at the moment the stream was paused.
+  if (stream.status === "Paused" && stream.pausedAt) {
+    const pausedAtMs = new Date(stream.pausedAt).getTime();
+    const elapsedSeconds = Math.max(0, (pausedAtMs - startTime) / 1000);
+    return Math.floor(flowRate * elapsedSeconds);
+  }
+
+  // Ended: cap at the configured end time.
+  if (stream.status === "Ended") {
+    effectiveNow = Math.min(effectiveNow, new Date(stream.endTime).getTime());
+  }
+
+  // Cancelled: cap at the cancellation timestamp when available.
+  if (stream.status === "Cancelled" && stream.cancelledAt) {
+    effectiveNow = Math.min(effectiveNow, stream.cancelledAt * 1000);
+  }
+
+  const elapsedSeconds = Math.max(0, (effectiveNow - startTime) / 1000);
+  return Math.floor(flowRate * elapsedSeconds);
+}
+
+/**
  * Remaining (unstreamed) deposit in stroops. Freezes while the stream is
  * paused instead of continuing to count down.
  */
-export function getRemainingBalance(stream: any): number {
+export function getRemainingBalance(stream: StreamData): number {
   if (!stream) return 0;
   const deposit = Number(stream.deposit);
   if (!Number.isFinite(deposit)) return 0;
@@ -976,7 +1018,10 @@ export function addStreamEvent(event: Omit<StreamEvent, "id">): StreamEvent {
 
 export function truncateAddress(address: string): string {
   if (!address) return "";
-  return `${address.slice(0, 4)}...${address.slice(-4)}`;
+  // Normalise to uppercase so mixed-case inputs (e.g. from copy-paste or
+  // external sources) render the same truncated form as the on-chain address.
+  const normalised = address.toUpperCase();
+  return `${normalised.slice(0, 4)}...${normalised.slice(-4)}`;
 }
 
 // ── Gas fee estimate ─────────────────────────────────────────────────────────
@@ -1062,6 +1107,31 @@ export interface FeeConfig {
 export async function getFeeConfig(): Promise<FeeConfig> {
   // Mock: 0.50% (50 bps). Set to 0 to test zero-fee path.
   return { basisPoints: 50 };
+}
+
+// ── Stream deposit cap ────────────────────────────────────────────────────────
+
+export interface StreamCapConfig {
+  /**
+   * Maximum allowed deposit per stream in stroops (1 USDC = 10_000_000 stroops).
+   * A value of 0 means no cap is enforced.
+   */
+  maxDepositStroops: number;
+}
+
+/**
+ * Simulates reading the maximum per-stream deposit cap from the contract.
+ * In production this would call the contract's `get_stream_cap` query instruction.
+ *
+ * The cap is intentionally set to 100_000 USDC (1_000_000_000_000 stroops) so
+ * integration tests can exercise the validation path without hitting real limits.
+ * Override by setting `NEXT_PUBLIC_MAX_DEPOSIT_STROOPS` in .env.local.
+ */
+export async function getStreamCapConfig(): Promise<StreamCapConfig> {
+  // Simulate network latency
+  await new Promise((r) => setTimeout(r, 100 + Math.random() * 100));
+  // Mock: 100 000 USDC cap (100_000 * 10_000_000 stroops).
+  return { maxDepositStroops: 100_000 * 10_000_000 };
 }
 
 // ── Contract version ──────────────────────────────────────────────────────────

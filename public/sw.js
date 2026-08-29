@@ -4,16 +4,19 @@
  * Strategy:
  *   - App shell (HTML, JS, CSS, icons, manifest): Cache-first with network fallback.
  *   - API / RPC calls (soroban RPC, coingecko, stellar.expert): Network-first, no cache.
- *   - Offline fallback: serve the cached root "/" when a navigation fails.
+ *   - Offline fallback: serve the cached fallback "/offline" or "/" when a navigation fails.
  */
 
 const CACHE_NAME = "sorostream-v1";
 
 const PRECACHE_URLS = [
   "/",
+  "/offline",
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
+  "/icons/icon-192.svg",
+  "/icons/icon-512.svg",
 ];
 
 /** URLs that should always go to the network (never cached). */
@@ -33,8 +36,12 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting()),
+      .then((cache) =>
+        cache.addAll(PRECACHE_URLS).catch((err) => {
+          console.warn("[SW] Precaching some assets failed:", err);
+        })
+      )
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -47,10 +54,10 @@ self.addEventListener("activate", (event) => {
         Promise.all(
           keys
             .filter((k) => k !== CACHE_NAME)
-            .map((k) => caches.delete(k)),
-        ),
+            .map((k) => caches.delete(k))
+        )
       )
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
   );
 });
 
@@ -65,15 +72,20 @@ self.addEventListener("fetch", (event) => {
   // Never cache RPC/API calls.
   if (isNetworkOnly(url)) return;
 
-  // Navigation requests: try network, fall back to cached "/".
+  // Navigation requests: try network, fall back to cached "/offline" or "/".
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() => caches.match("/")),
+      fetch(request).catch(() =>
+        caches
+          .match("/offline")
+          .then((res) => res || caches.match("/"))
+          .then((res) => res || caches.match(request))
+      )
     );
     return;
   }
 
-  // Static assets: cache-first.
+  // Static assets: cache-first with network fallback.
   event.respondWith(
     caches.match(request).then(
       (cached) =>
@@ -89,7 +101,81 @@ self.addEventListener("fetch", (event) => {
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
-        }),
-    ),
+        })
+    )
   );
+});
+
+// ── Web Push: receive push events from the browser push service (#523) ──────
+self.addEventListener("push", (event) => {
+  let data = {
+    title: "SoroStream",
+    body: "You have a new stream notification.",
+    icon: "/icons/icon-192.png",
+    url: "/dashboard",
+    tag: "sorostream-push",
+  };
+
+  if (event.data) {
+    try {
+      const parsed = event.data.json();
+      data = { ...data, ...parsed };
+    } catch {
+      data.body = event.data.text() || data.body;
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: data.icon,
+      badge: "/icons/icon-192.png",
+      tag: data.tag,
+      data: { url: data.url },
+    }),
+  );
+});
+
+// ── notificationclick: open or focus the relevant app URL ───────────────────
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url)
+    ? event.notification.data.url
+    : "/dashboard";
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        // If a window for the target URL is already open, focus it.
+        for (const client of clientList) {
+          const clientUrl = new URL(client.url);
+          const target = new URL(targetUrl, self.location.origin);
+          if (clientUrl.pathname === target.pathname && "focus" in client) {
+            return client.focus();
+          }
+        }
+        // Otherwise open a new window.
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(targetUrl);
+        }
+      }),
+  );
+});
+
+// ── Message: local notification dispatch from the app ───────────────────────
+// The app posts `sorostream-show-notification` messages when it wants to show
+// a notification without a real push server (e.g. for stream milestones).
+self.addEventListener("message", (event) => {
+  if (!event.data || event.data.type !== "sorostream-show-notification") return;
+  const { payload } = event.data;
+  if (!payload || !payload.title) return;
+
+  self.registration.showNotification(payload.title, {
+    body: payload.body ?? "",
+    icon: payload.icon ?? "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    tag: payload.tag ?? "sorostream-local",
+    data: { url: payload.url ?? "/dashboard" },
+  });
 });

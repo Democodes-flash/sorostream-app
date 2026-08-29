@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface CountdownTimerProps {
   endTime: Date | string;
@@ -21,13 +21,44 @@ function computeRemaining(endTime: Date | string) {
 
 export default function CountdownTimer({ endTime }: CountdownTimerProps) {
   const [remaining, setRemaining] = useState(() => computeRemaining(endTime));
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setRemaining(computeRemaining(endTime));
-    const interval = setInterval(() => {
+    function recalculate() {
       setRemaining(computeRemaining(endTime));
-    }, 1000);
-    return () => clearInterval(interval);
+    }
+
+    function startInterval() {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(recalculate, 1000);
+    }
+
+    // Recalculate immediately then start ticking.
+    recalculate();
+    startInterval();
+
+    // When the tab becomes visible again after being backgrounded, the browser
+    // may have throttled the interval — recalculate elapsed time immediately
+    // using Date.now() rather than relying on accumulated ticks.
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        recalculate();
+        startInterval();
+      } else {
+        // Stop ticking while the tab is hidden to prevent drift accumulation.
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [endTime]);
 
   if (remaining.expired) {

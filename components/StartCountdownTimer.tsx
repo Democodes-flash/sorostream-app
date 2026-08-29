@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface StartCountdownTimerProps {
   /** Unix timestamp in seconds for the scheduled start. */
@@ -24,18 +24,56 @@ function computeRemaining(unixSeconds: number) {
  * Countdown timer targeting a future stream start time.
  * Renders a pulsing "Scheduled" chip while counting down, and a
  * "Stream is live!" chip once the start time is reached.
+ *
+ * Uses the Page Visibility API to recalculate elapsed time on tab refocus
+ * instead of relying on accumulated interval ticks, which are throttled by the
+ * browser when the tab is backgrounded for more than ~30 s. This prevents the
+ * "freeze then jump" behaviour described in issue #524.
  */
 export default function StartCountdownTimer({ scheduledStartTime }: StartCountdownTimerProps) {
   const [remaining, setRemaining] = useState(() => computeRemaining(scheduledStartTime));
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (remaining.started) return;
-    const interval = setInterval(() => {
+
+    function recalculate() {
       const next = computeRemaining(scheduledStartTime);
       setRemaining(next);
-      if (next.started) clearInterval(interval);
-    }, 1000);
-    return () => clearInterval(interval);
+      if (next.started && intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+
+    function startInterval() {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(recalculate, 1000);
+    }
+
+    recalculate();
+    startInterval();
+
+    // On tab refocus, recalculate immediately using Date.now() to correct any
+    // drift that built up while the browser throttled the interval.
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        recalculate();
+        startInterval();
+      } else {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [scheduledStartTime, remaining.started]);
 
   if (remaining.started) {

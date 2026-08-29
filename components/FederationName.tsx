@@ -23,7 +23,8 @@ interface FederationNameProps {
 
 function truncateAddress(addr: string): string {
   if (!addr || addr.length < 10) return addr;
-  return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
+  const normalized = addr.toUpperCase();
+  return `${normalized.slice(0, 4)}…${normalized.slice(-4)}`;
 }
 
 export default function FederationName({
