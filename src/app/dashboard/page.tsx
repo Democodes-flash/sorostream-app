@@ -24,6 +24,7 @@ import PortfolioSummaryCard from "@/components/PortfolioSummaryCard";
 import StreamPerformanceMetrics from "@/components/StreamPerformanceMetrics";
 import WatchlistTab from "@/components/WatchlistTab";
 import StreamCard from "@/components/StreamCard";
+import PollingIndicator from "@/components/PollingIndicator";
 
 type DashboardState = "loading" | "filtered-empty" | "empty" | "ready";
 
@@ -101,6 +102,8 @@ function DashboardContent() {
   const [showGiftModal, setShowGiftModal] = useState(false);
   // When "asset", streams are grouped by their token in the list view.
   const [groupBy, setGroupBy] = useState<"none" | "asset">("none");
+  const [lastRefreshTime, setLastRefreshTime] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -124,7 +127,10 @@ function DashboardContent() {
         const data = await rpcFetch(() =>
           Promise.resolve(getStreamsForWallet(address)),
         );
-        if (!cancelled) setStreams(data);
+        if (!cancelled) {
+          setStreams(data);
+          setLastRefreshTime(Date.now());
+        }
       } catch {
         // Errors are surfaced via toast by rpcFetch; leave streams empty.
       } finally {
@@ -139,7 +145,10 @@ function DashboardContent() {
         const data = await rpcFetch(() =>
           Promise.resolve(watchClaimable(getStreamsForWallet(address))),
         );
-        if (!cancelled) setStreams(data);
+        if (!cancelled) {
+          setStreams(data);
+          setLastRefreshTime(Date.now());
+        }
       } catch {
         // silently keep current data
       }
@@ -155,14 +164,18 @@ function DashboardContent() {
   // Manual refresh ("r" shortcut / refresh event) — re-fetch without resetting filters.
   const refreshStreams = useCallback(async () => {
     if (!address) return;
+    setIsRefreshing(true);
     try {
       const data = await rpcFetch(() =>
         Promise.resolve(getStreamsForWallet(address)),
       );
       setStreams(data);
+      setLastRefreshTime(Date.now());
       addToast("Stream list refreshed.", "info");
     } catch {
       // Errors are surfaced via toast by rpcFetch.
+    } finally {
+      setIsRefreshing(false);
     }
   }, [address, rpcFetch, addToast]);
 
@@ -417,7 +430,15 @@ function DashboardContent() {
     <main id="main-content" tabIndex={-1} className="min-h-screen bg-gray-900 text-white p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div className="flex flex-col gap-2">
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <PollingIndicator
+              lastRefreshTime={lastRefreshTime}
+              isLoading={isRefreshing}
+              onManualRefresh={refreshStreams}
+              pollIntervalMs={30000}
+            />
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
