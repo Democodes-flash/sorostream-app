@@ -12,6 +12,7 @@ import TransactionStepper, { TxStage } from "@/components/TransactionStepper";
 import SchedulingToggle from "@/components/SchedulingToggle";
 import FeeEstimationPanel from "@/components/FeeEstimationPanel";
 import StreamCostCalculator from "@/components/StreamCostCalculator";
+import StreamRateCalculator from "@/components/StreamRateCalculator";
 import BatchCreateTab from "@/components/BatchCreateTab";
 import NetReceivedDisplay from "@/components/NetReceivedDisplay";
 import StreamDryRunPreview from "@/components/StreamDryRunPreview";
@@ -1046,6 +1047,14 @@ function NewStreamWizard() {
                 error={errors.duration || undefined}
               />
             </div>
+
+            {/* Stream Rate Calculator (#472) */}
+            {amount && duration > 0 && (
+              <StreamRateCalculator
+                amount={amount}
+                duration={duration}
+              />
+            )}
 
             {/* Scheduling toggle */}
             <SchedulingToggle
