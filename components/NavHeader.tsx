@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import NetworkSelector from "@/components/NetworkSelector";
@@ -8,10 +8,10 @@ import ThemeToggle from "@/components/ThemeToggle";
 import ChangelogModal, { useChangelogUnread } from "@/components/ChangelogModal";
 import NotificationBadge from "@/components/NotificationBadge";
 import GlobalSearch from "@/components/GlobalSearch";
+import WalletBalanceDisplay from "@/components/WalletBalanceDisplay";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { useSettings } from "@/src/context/SettingsContext";
 import { useWallet } from "@/src/context/WalletContext";
-import { APP_NETWORK } from "@/src/lib/freighter";
 import { useTranslations } from "@/src/lib/i18n";
 import { useGlobalShortcuts } from "@/components/GlobalShortcuts";
 import RpcHealthIndicator from "@/components/RpcHealthIndicator";
@@ -27,23 +27,13 @@ const NAV_LINKS = [
   { href: "/settings", key: "settings" },
 ] as const;
 
-const HORIZON_URL =
-  APP_NETWORK === "public" || APP_NETWORK === "mainnet"
-    ? "https://horizon.stellar.org"
-    : APP_NETWORK === "futurenet"
-    ? "https://horizon-futurenet.stellar.org"
-    : "https://horizon-testnet.stellar.org";
-
 export default function NavHeader() {
   const t = useTranslations("nav");
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const { countFor, clearSection } = useNotifications();
-  const { showUsd, toggleShowUsd, language } = useSettings();
+  const { showUsd, toggleShowUsd } = useSettings();
   const { address, balanceRefreshTrigger } = useWallet();
-  const [xlmBalance, setXlmBalance] = useState<string | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-  const [balanceUpdated, setBalanceUpdated] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const changelogUnread = useChangelogUnread();
   const { openHelp } = useGlobalShortcuts();
@@ -62,43 +52,6 @@ export default function NavHeader() {
     if (active) clearSection(active.href);
   }, [pathname, clearSection]);
 
-  const fetchBalance = useCallback(async (addr: string) => {
-    setBalanceLoading(true);
-    try {
-      const res = await fetch(`${HORIZON_URL}/accounts/${addr}`);
-      if (!res.ok) throw new Error(`Horizon ${res.status}`);
-      const data = await res.json() as { balances?: { asset_type: string; balance: string }[] };
-      const native = data.balances?.find((b) => b.asset_type === "native");
-      setXlmBalance(native ? parseFloat(native.balance).toFixed(2) : null);
-    } catch {
-      setXlmBalance(null);
-    } finally {
-      setBalanceLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!address) {
-      setXlmBalance(null);
-      return;
-    }
-    void fetchBalance(address);
-    const interval = setInterval(() => void fetchBalance(address), 60_000);
-    return () => clearInterval(interval);
-  // balanceRefreshTrigger: re-fetch immediately when bumped (e.g. after withdrawal)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, fetchBalance, balanceRefreshTrigger]);
-
-  // Brief "Balance updated" indicator when balance changes
-  const prevBalanceRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (xlmBalance !== null && prevBalanceRef.current !== null && prevBalanceRef.current !== xlmBalance) {
-      setBalanceUpdated(true);
-      const timer = setTimeout(() => setBalanceUpdated(false), 2000);
-      return () => clearTimeout(timer);
-    }
-    prevBalanceRef.current = xlmBalance;
-  }, [xlmBalance]);
 
   return (
     <>
@@ -138,25 +91,7 @@ export default function NavHeader() {
           <GlobalSearch />
           <NetworkSelector />
           <RpcHealthIndicator />
-          {address && (
-            <span
-              className="text-xs text-gray-600 dark:text-gray-300 font-mono hidden sm:inline-block"
-              aria-label={t("wallet_balance")}
-            >
-              {balanceLoading && xlmBalance === null ? (
-                <span className="inline-block w-16 h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" aria-hidden="true" />
-              ) : xlmBalance !== null ? (
-                <span className="inline-flex items-center gap-1.5">
-                  {`${parseFloat(xlmBalance).toLocaleString(language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} XLM`}
-                  {balanceUpdated && (
-                    <span className="text-[10px] text-green-400 font-normal" aria-live="polite">
-                      updated
-                    </span>
-                  )}
-                </span>
-              ) : null}
-            </span>
-          )}
+          <WalletBalanceDisplay address={address} balanceRefreshTrigger={balanceRefreshTrigger} />
           <WalletConnect compact />
           <button
             onClick={toggleShowUsd}
