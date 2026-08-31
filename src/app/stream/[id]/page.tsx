@@ -42,6 +42,8 @@ import StartCountdownTimer from "@/components/StartCountdownTimer";
 import EmbedWidgetModal from "@/components/EmbedWidgetModal";
 import StreamComparisonModal from "@/components/StreamComparisonModal";
 import StreamTagEditor from "@/components/StreamTagEditor";
+import TopUpModal from "@/components/TopUpModal";
+import TransactionTimeline from "@/components/TransactionTimeline";
 import { getGiftMessage } from "@/components/GiftStreamModal";
 import { useSettings } from "@/src/context/SettingsContext";
 import { formatStellarAmount } from "@/src/lib/sorostream";
@@ -1376,6 +1378,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
             <button
               onClick={handleWithdraw}
               disabled={isBusy}
+              aria-label={`Withdraw available funds from stream ${stream.id}`}
               className="flex-1 bg-green-700 text-white py-3 rounded-lg font-medium hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
             >
               {withdrawLoading ? (
@@ -1392,6 +1395,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
               onClick={cancelPending ? handleCancelUndo : () => setShowCancelModal(true)}
               disabled={cancelLoading || withdrawLoading || topUpLoading || pauseLoading || resumeLoading}
               aria-live="polite"
+              aria-label={cancelPending ? `Undo cancellation of stream ${stream.id}` : `Cancel stream ${stream.id}. This is irreversible.`}
               className={`flex-1 py-3 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed ${
                 cancelPending
                   ? "bg-amber-600 text-white hover:bg-amber-700 focus-visible:ring-amber-500"
@@ -1416,6 +1420,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
             <button
               onClick={() => setShowPauseModal(true)}
               disabled={isBusy}
+              aria-label={`Pause stream ${stream.id}. This will temporarily halt the stream, and the recipient will not receive funds while paused.`}
               className="w-full border border-yellow-600 text-yellow-400 py-3 rounded-lg font-medium hover:bg-yellow-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {pauseLoading ? (
@@ -1459,6 +1464,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
 	            <button
               onClick={() => setShowResumeModal(true)}
               disabled={isBusy}
+              aria-label={`Resume stream ${stream.id}. Funds will start flowing to the recipient again from this point forward.`}
               className="w-full border border-green-600 text-green-400 py-3 rounded-lg font-medium hover:bg-green-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {resumeLoading ? (
@@ -1552,55 +1558,28 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
             {t("compare")}
           </button>
 
-          {/* Top-up form */}
-          {showTopUp && (
-            <div className="space-y-2">
-              <label htmlFor="topup-amount" className="text-gray-200 text-sm font-medium block">
-                Top-up Amount ({stream.token})
-              </label>
-              <input
-                id="topup-amount"
-                type="number"
-                value={topUpAmount}
-                onChange={(e) => setTopUpAmount(e.target.value)}
-                placeholder={`Amount (${stream.token})`}
-                min="0"
-                step="0.01"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-              />
-              <button
-                onClick={handleTopUp}
-                disabled={topUpLoading || !topUpAmount || parseFloat(topUpAmount) <= 0}
-                className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-              >
-                {topUpLoading ? (
-                  <>
-                    <Spinner />
-                    Topping up…
-                  </>
-                ) : (
-                  "Confirm Top-up"
-                )}
-              </button>
-            </div>
-          )}
+          {/* Top-up button */}
           <button
-            onClick={() => setShowTopUp((v) => !v)}
-            aria-expanded={showTopUp}
+            onClick={() => setShowTopUp(true)}
             disabled={topUpLoading}
-            className="w-full border border-gray-600 text-gray-300 py-2 rounded-lg text-sm hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:opacity-50"
+            aria-label="Open top-up stream modal to add funds"
+            className="w-full border border-blue-600 text-blue-400 py-3 rounded-lg font-medium hover:bg-blue-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {showTopUp ? "Cancel Top-up" : "Top Up Stream"}
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="12 5 12 19" />
+              <polyline points="5 12 19 12" />
+            </svg>
+            Top Up Stream
           </button>
 
           {/* Tags */}
           <StreamTagEditor streamId={stream.id} />
 
-          {/* Transaction history */}
-          <StreamErrorBoundary section="Transaction History" resetKey={stream.id}>
-            <section aria-labelledby="history-heading">
-              <h2 id="history-heading" className="text-lg font-semibold mb-3">
-                Transaction History
+          {/* Transaction history timeline */}
+          <StreamErrorBoundary section="Transaction History Timeline" resetKey={stream.id}>
+            <section aria-labelledby="history-heading" className="space-y-4">
+              <h2 id="history-heading" className="text-lg font-semibold mb-4">
+                Transaction History Timeline
               </h2>
               {(() => {
                 // Only show entries sourced from real on-chain data. Mock
@@ -1612,7 +1591,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
                 if (hasOnlyMockData) {
                   return (
                     <div className="bg-gray-800 rounded-xl p-6 text-center border border-gray-700 space-y-2">
-                      <p className="text-gray-300 font-medium text-sm">No transaction history yet</p>
+                      <p className="text-gray-300 font-medium text-sm">📋 No transaction history yet</p>
                       <p className="text-gray-500 text-xs leading-relaxed">
                         On-chain events are not yet indexed for this stream. Transaction
                         history will appear here once contract event indexing is available.
@@ -1627,7 +1606,7 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
                     {realEntries.length > 0 && (
                       <div className="mt-4">
                         <p className="text-gray-400 text-sm font-medium mb-3">
-                          History Export
+                          📥 History Export
                         </p>
                         <TransactionExportButton
                           entries={realEntries}
@@ -1907,6 +1886,18 @@ export default function StreamDetail({ params }: { params: { id: string } }) {
           onClose={() => setShowEmbedModal(false)}
         />
       )}
+
+      {/* Top-up modal (Issue #475 - Stream Top-Up Flow) */}
+      <TopUpModal
+        open={showTopUp}
+        onClose={() => {
+          setShowTopUp(false);
+          setTopUpAmount("");
+        }}
+        onConfirm={handleTopUp}
+        token={stream.token}
+        loading={topUpLoading}
+      />
 
       {stream && (
         <StreamComparisonModal
