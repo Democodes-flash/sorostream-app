@@ -38,7 +38,11 @@
     "cliff_label": "Fecha de Carecia",
     "cliff_optional": "(opcional)",
     "end_date_label": "Fecha de Fin",
-    "vesting_preview": "Vista Previa de Adquisición"
+    "vesting_preview": "Vista Previa de Adquisición",
+    "recipient_contacts_label": "Libreta de direcciones",
+    "recipient_contacts_open": "Abrir libreta de direcciones",
+    "recipient_contacts_empty": "No hay contactos guardados",
+    "recipient_contact_alias": "{alias} ({address})"
   },
   "stream_detail": {
     "title": "Flujo #{id}",
