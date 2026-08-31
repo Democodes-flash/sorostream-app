@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import NetworkSelector from "@/components/NetworkSelector";
@@ -8,10 +8,10 @@ import ThemeToggle from "@/components/ThemeToggle";
 import ChangelogModal, { useChangelogUnread } from "@/components/ChangelogModal";
 import NotificationBadge from "@/components/NotificationBadge";
 import GlobalSearch from "@/components/GlobalSearch";
+import WalletBalanceDisplay from "@/components/WalletBalanceDisplay";
 import { useNotifications } from "@/src/context/NotificationContext";
 import { useSettings } from "@/src/context/SettingsContext";
 import { useWallet } from "@/src/context/WalletContext";
-import { APP_NETWORK } from "@/src/lib/freighter";
 import { useTranslations } from "@/src/lib/i18n";
 import { useGlobalShortcuts } from "@/components/GlobalShortcuts";
 import RpcHealthIndicator from "@/components/RpcHealthIndicator";
@@ -28,19 +28,12 @@ const NAV_LINKS = [
   { href: "/settings", key: "settings" },
 ] as const;
 
-const HORIZON_URL =
-  APP_NETWORK === "public" || APP_NETWORK === "mainnet"
-    ? "https://horizon.stellar.org"
-    : APP_NETWORK === "futurenet"
-    ? "https://horizon-futurenet.stellar.org"
-    : "https://horizon-testnet.stellar.org";
-
 export default function NavHeader() {
   const t = useTranslations("nav");
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const { countFor, clearSection } = useNotifications();
-  const { showUsd, toggleShowUsd, language } = useSettings();
+  const { showUsd, toggleShowUsd } = useSettings();
   const { address, balanceRefreshTrigger } = useWallet();
   const { network } = useNetwork();
   const [xlmBalance, setXlmBalance] = useState<string | null>(null);

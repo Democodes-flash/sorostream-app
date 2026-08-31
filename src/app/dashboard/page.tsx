@@ -145,7 +145,10 @@ function DashboardContent() {
         const data = await rpcFetch(() =>
           Promise.resolve(getStreamsForWallet(address)),
         );
-        if (!cancelled) setStreams(data);
+        if (!cancelled) {
+          setStreams(data);
+          setLastRefreshTime(Date.now());
+        }
       } catch {
         // Errors are surfaced via toast by rpcFetch; leave streams empty.
       } finally {
@@ -160,7 +163,10 @@ function DashboardContent() {
         const data = await rpcFetch(() =>
           Promise.resolve(watchClaimable(getStreamsForWallet(address))),
         );
-        if (!cancelled) setStreams(data);
+        if (!cancelled) {
+          setStreams(data);
+          setLastRefreshTime(Date.now());
+        }
       } catch {
         // silently keep current data
       }
@@ -176,14 +182,18 @@ function DashboardContent() {
   // Manual refresh ("r" shortcut / refresh event) — re-fetch without resetting filters.
   const refreshStreams = useCallback(async () => {
     if (!address) return;
+    setIsRefreshing(true);
     try {
       const data = await rpcFetch(() =>
         Promise.resolve(getStreamsForWallet(address)),
       );
       setStreams(data);
+      setLastRefreshTime(Date.now());
       addToast("Stream list refreshed.", "info");
     } catch {
       // Errors are surfaced via toast by rpcFetch.
+    } finally {
+      setIsRefreshing(false);
     }
   }, [address, rpcFetch, addToast]);
 
