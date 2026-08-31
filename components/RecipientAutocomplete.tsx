@@ -45,7 +45,7 @@ export default function RecipientAutocomplete({
 
   useEffect(() => {
     setContacts(getContacts(senderAddress));
-  }, [senderAddress]);
+  }, [senderAddress, open]);
 
   // Federation lookup effect - triggered when value contains * (federation address)
   useEffect(() => {
@@ -182,6 +182,7 @@ export default function RecipientAutocomplete({
           tabIndex={-1}
           aria-label="Toggle address book contacts"
           data-testid="address-book-toggle"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => setOpen((prev) => !prev)}
           className={`absolute right-3 top-1/2 -translate-y-1/2 transition-colors ${open ? "text-green-400" : "text-gray-400 hover:text-white"}`}
         >
