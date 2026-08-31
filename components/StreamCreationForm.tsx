@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import DurationPicker from "@/components/DurationPicker";
 import FlowRatePreview from "@/components/FlowRatePreview";
 import RecipientAutocomplete from "@/components/RecipientAutocomplete";
@@ -22,6 +22,66 @@ const SUPPORTED_TOKENS = [
   { symbol: "AQUA", name: "Aquarius" },
   { symbol: "yXLM", name: "Yield XLM" },
 ] as const;
+
+type AddressBookEntry = { id?: string; name: string; address: string };
+
+const ADDRESS_BOOK_STORAGE_KEYS = [
+  "addressBook",
+  "stellar-address-book",
+  "stellarAddressBook",
+  "contacts",
+] as const;
+
+function readAddressBook(): AddressBookEntry[] {
+  if (typeof window === "undefined") return [];
+  for (const key of ADDRESS_BOOK_STORAGE_KEYS) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as unknown;
+      const list = Array.isArray(parsed)
+        ? parsed
+        : parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>).contacts ??
+          (parsed as Record<string, unknown>).entries ??
+          (parsed as Record<string, unknown>).addresses
+        : [];
+      if (!Array.isArray(list)) continue;
+      const contacts = list
+        .map((entry): AddressBookEntry | null => {
+          if (typeof entry === "string") {
+            const address = entry.trim();
+            return address ? { name: "", address } : null;
+          }
+          if (!entry || typeof entry !== "object") return null;
+          const e = entry as Record<string, unknown>;
+          const address =
+            typeof e.address === "string"
+              ? e.address.trim()
+              : typeof e.publicKey === "string"
+              ? e.publicKey.trim()
+              : "";
+          const name =
+            typeof e.name === "string"
+              ? e.name
+              : typeof e.alias === "string"
+              ? e.alias
+              : "";
+          return address
+            ? { id: typeof e.id === "string" ? e.id : address, name, address }
+            : null;
+        })
+        .filter(
+          (c): c is AddressBookEntry =>
+            !!c && /^G[A-Z2-7]{55}$/.test(c.address),
+        );
+      if (contacts.length > 0) return contacts;
+    } catch {
+      // Ignore malformed address book entries.
+    }
+  }
+  return [];
+}
 
 const STEP_LABELS: Record<StreamCreationStep, { title: string; number: number }> = {
   recipient: { title: "Recipient", number: 1 },
@@ -127,6 +187,61 @@ function StepNav({
         {isLastStep ? "Create Stream" : "Continue →"}
       </button>
     </div>
+  );
+}
+
+/** Address-book quick-fill dropdown. */
+function AddressBookPicker({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (contact: AddressBookEntry) => void;
+  onClose: () => void;
+}) {
+  const contacts = useMemo(() => readAddressBook(), []);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-10 cursor-default"
+        aria-label="Close address book"
+        onClick={onClose}
+        tabIndex={-1}
+      />
+      <div
+        className="absolute z-20 mt-2 w-full bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden"
+        role="listbox"
+        aria-label="Address book"
+      >
+        {contacts.length === 0 ? (
+          <p className="text-gray-400 text-sm px-4 py-3">
+            No saved contacts yet. Add recipients in your address book to quick-fill.
+          </p>
+        ) : (
+          <ul className="max-h-60 overflow-y-auto py-1">
+            {contacts.map((contact) => (
+              <li key={contact.id ?? contact.address}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(contact)}
+                  className="w-full text-left px-4 py-2 hover:bg-gray-700 focus-visible:outline-none focus-visible:bg-gray-700 transition-colors"
+                  role="option"
+                  aria-selected="false"
+                >
+                  {contact.name && (
+                    <span className="block text-sm text-white">{contact.name}</span>
+                  )}
+                  <span className="block text-xs text-gray-400 font-mono truncate">
+                    {contact.address}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -236,6 +351,8 @@ export default function StreamCreationForm({
     duration: "",
   });
   const [touched, setTouched] = useState({ recipient: false, amount: false });
+  const [selectedAlias, setSelectedAlias] = useState("");
+  const [showAddressBook, setShowAddressBook] = useState(false);
 
   const currentIdx = ALL_STEPS.indexOf(step);
   const isLastStep = step === "confirm";
@@ -323,24 +440,74 @@ export default function StreamCreationForm({
               >
                 Recipient address
               </label>
-              <RecipientAutocomplete
-                value={recipient}
-                onChange={(v) => {
-                  setRecipient(v);
-                  if (touched.recipient)
-                    setErrors((p) => ({ ...p, recipient: validateRecipient(v) }));
-                }}
-                onBlur={() => {
-                  setTouched((p) => ({ ...p, recipient: true }));
-                  setErrors((p) => ({
-                    ...p,
-                    recipient: validateRecipient(recipient),
-                  }));
-                }}
-                placeholder="G… (56-character Stellar public key)"
-                error={errors.recipient}
-                touched={touched.recipient}
-              />
+              <div className="relative">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <RecipientAutocomplete
+                      value={recipient}
+                      onChange={(v) => {
+                        setRecipient(v);
+                        setSelectedAlias("");
+                        if (touched.recipient)
+                          setErrors((p) => ({ ...p, recipient: validateRecipient(v) }));
+                      }}
+                      onBlur={() => {
+                        setTouched((p) => ({ ...p, recipient: true }));
+                        setErrors((p) => ({
+                          ...p,
+                          recipient: validateRecipient(recipient),
+                        }));
+                      }}
+                      placeholder="G… (56-character Stellar public key)"
+                      error={errors.recipient}
+                      touched={touched.recipient}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddressBook((v) => !v)}
+                    className="shrink-0 text-gray-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded-md p-2"
+                    aria-label="Open address book"
+                    aria-haspopup="listbox"
+                    aria-expanded={showAddressBook}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                {showAddressBook && (
+                  <AddressBookPicker
+                    onSelect={(contact) => {
+                      setRecipient(contact.address);
+                      setSelectedAlias(contact.name);
+                      setTouched((p) => ({ ...p, recipient: true }));
+                      setErrors((p) => ({
+                        ...p,
+                        recipient: validateRecipient(contact.address),
+                      }));
+                      setShowAddressBook(false);
+                    }}
+                    onClose={() => setShowAddressBook(false)}
+                  />
+                )}
+              </div>
+              {selectedAlias && (
+                <p className="text-green-400 text-sm mt-1">
+                  Saved contact: <span className="font-medium">{selectedAlias}</span>
+                </p>
+              )}
               {errors.recipient && touched.recipient && (
                 <p className="text-red-400 text-sm mt-1" role="alert">
                   {errors.recipient}
