@@ -1,7 +1,8 @@
 import type { StorybookConfig } from "@storybook/nextjs";
+import type { StorybookConfigVite } from "@storybook/builder-vite";
 import path from "path";
 
-const config: StorybookConfig = {
+const config: StorybookConfig & StorybookConfigVite = {
   stories: ["../components/**/*.stories.@(js|jsx|ts|tsx)"],
   addons: [
     "@storybook/addon-links",
